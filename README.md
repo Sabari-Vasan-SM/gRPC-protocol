@@ -1,6 +1,6 @@
-# User Management System using gRPC
+# Realtime Chat Application using gRPC
 
-A beginner-friendly mini project to learn how gRPC works with Node.js and Protocol Buffers.
+A beginner-friendly mini project to learn realtime communication with gRPC, Node.js, and Protocol Buffers.
 
 ## Project Structure
 
@@ -18,14 +18,17 @@ project/
 
 ## What This Project Does
 
-The gRPC service (`UserService`) supports these methods:
+The gRPC service (`ChatService`) uses one bidirectional streaming RPC:
 
-- `CreateUser`
-- `GetUser`
-- `ListUsers`
-- `DeleteUser`
+- `Chat(stream ChatMessage) returns (stream ChatMessage)`
 
-Users are stored in an in-memory array on the server, so data is reset when the server restarts.
+Each connected client can:
+
+- Send messages to the server
+- Receive broadcast messages from all users in realtime
+- Join and leave the chat
+
+Active connections are kept in memory, so everything resets when the server restarts.
 
 ## Installation
 
@@ -46,30 +49,28 @@ npm run start:server
 
 The server starts on `localhost:50051`.
 
-### 2. Run the client (in another terminal)
+### 2. Run one or more chat clients (in other terminals)
 
 ```bash
-npm run start:client
+npm run start:client -- Alice
+npm run start:client -- Bob
 ```
 
-The client will:
+Each client terminal is interactive:
 
-- Create two users
-- List all users
-- Get one user by id
-- Delete one user
-- List users again
+- Type a message and press Enter to send
+- Type `/exit` to leave chat
 
 ## How gRPC Works Here (Brief)
 
 1. The API contract is defined in `proto/user.proto`.
 2. Server and client both load this `.proto` file using `@grpc/proto-loader`.
-3. The server implements each RPC method in `server/server.js`.
-4. The client calls those methods in `client/client.js` as if they were local functions.
-5. gRPC handles serialization (Protocol Buffers), network transport (HTTP/2), and method routing.
+3. The server opens one stream per connected client and stores active streams in memory.
+4. When a client sends a message, the server broadcasts it to every active stream.
+5. gRPC handles serialization (Protocol Buffers), network transport (HTTP/2), and stream delivery.
 
 ## Notes for Beginners
 
 - `.proto` is the single source of truth for your service contract.
-- Both server and client must follow the same contract.
-- In real projects, replace in-memory storage with a database.
+- Bidirectional streaming is great for chat, live feeds, and collaborative apps.
+- In production, add authentication, persistence, and message history storage.

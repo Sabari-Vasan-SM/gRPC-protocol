@@ -12,80 +12,96 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
     oneofs: true,
 });
 
-const userProto = grpc.loadPackageDefinition(packageDefinition).user;
+const chatProto = grpc.loadPackageDefinition(packageDefinition).chat;
 
-// In-memory storage for users (resets when server restarts).
-const users = [];
+// In-memory list of active streams for broadcasting.
+const activeClients = new Map();
 
-function createUser(call, callback) {
-    const { id, name, email } = call.request;
+function nowIso() {
+    return new Date().toISOString();
+}
 
-    if (!id || !name || !email) {
-        return callback({
-            code: grpc.status.INVALID_ARGUMENT,
-            details: 'id, name, and email are required.',
-        });
+function broadcastMessage(message) {
+    for (const { call } of activeClients.values()) {
+        call.write(message);
     }
+}
 
-    const existingUser = users.find((user) => user.id === id);
-    if (existingUser) {
-        return callback({
-            code: grpc.status.ALREADY_EXISTS,
-            details: `User with id ${id} already exists.`,
-        });
-    }
+function chat(call) {
+    const clientId = `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const clientInfo = { call, user: 'Anonymous' };
+    activeClients.set(clientId, clientInfo);
 
-    users.push({ id, name, email });
-    return callback(null, {
-        success: true,
-        message: `User ${id} created successfully.`,
+    call.write({
+        user: 'System',
+        message: 'Connected to gRPC chat. Type messages and press Enter.',
+        timestamp: nowIso(),
+        isSystem: true,
     });
-}
 
-function getUser(call, callback) {
-    const { id } = call.request;
-    const user = users.find((item) => item.id === id);
+    let disconnected = false;
 
-    if (!user) {
-        return callback({
-            code: grpc.status.NOT_FOUND,
-            details: `User with id ${id} not found.`,
+    const disconnectClient = () => {
+        if (disconnected) {
+            return;
+        }
+
+        disconnected = true;
+        const userName = clientInfo.user || 'Anonymous';
+        activeClients.delete(clientId);
+
+        broadcastMessage({
+            user: 'System',
+            message: `${userName} left the chat.`,
+            timestamp: nowIso(),
+            isSystem: true,
         });
-    }
+    };
 
-    return callback(null, user);
-}
+    call.on('data', (incomingMessage) => {
+        const userName = (incomingMessage.user || '').trim() || 'Anonymous';
+        const text = (incomingMessage.message || '').trim();
 
-function listUsers(call, callback) {
-    return callback(null, { users });
-}
+        if (!text) {
+            return;
+        }
 
-function deleteUser(call, callback) {
-    const { id } = call.request;
-    const index = users.findIndex((user) => user.id === id);
+        // Announce once when a client first identifies with a non-default username.
+        if (clientInfo.user === 'Anonymous' && userName !== 'Anonymous') {
+            clientInfo.user = userName;
+            broadcastMessage({
+                user: 'System',
+                message: `${userName} joined the chat.`,
+                timestamp: nowIso(),
+                isSystem: true,
+            });
+        } else {
+            clientInfo.user = userName;
+        }
 
-    if (index === -1) {
-        return callback({
-            code: grpc.status.NOT_FOUND,
-            details: `User with id ${id} not found.`,
+        broadcastMessage({
+            user: userName,
+            message: text,
+            timestamp: nowIso(),
+            isSystem: false,
         });
-    }
+    });
 
-    users.splice(index, 1);
-    return callback(null, {
-        success: true,
-        message: `User ${id} deleted successfully.`,
+    call.on('end', () => {
+        disconnectClient();
+        call.end();
+    });
+
+    call.on('error', () => {
+        disconnectClient();
     });
 }
 
 function main() {
     const server = new grpc.Server();
 
-    server.addService(userProto.UserService.service, {
-        CreateUser: createUser,
-        GetUser: getUser,
-        ListUsers: listUsers,
-        DeleteUser: deleteUser,
+    server.addService(chatProto.ChatService.service, {
+        Chat: chat,
     });
 
     const address = '0.0.0.0:50051';

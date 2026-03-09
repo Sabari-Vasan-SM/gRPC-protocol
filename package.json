@@ -1,7 +1,7 @@
 {
-    "name": "grpc-user-management-system",
+    "name": "grpc-realtime-chat-app",
     "version": "1.0.0",
-    "description": "Beginner-friendly User Management System using gRPC, Node.js, and Protocol Buffers",
+    "description": "Beginner-friendly realtime chat application using gRPC, Node.js, and Protocol Buffers",
     "main": "server/server.js",
     "scripts": {
         "start:server": "node server/server.js",
@@ -11,7 +11,8 @@
         "grpc",
         "nodejs",
         "protobuf",
-        "beginner-project"
+        "beginner-project",
+        "realtime-chat"
     ],
     "author": "",
     "license": "MIT",

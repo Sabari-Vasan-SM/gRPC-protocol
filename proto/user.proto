@@ -1,35 +1,18 @@
 syntax = "proto3";
 
-package user;
+package chat;
 
-import "google/protobuf/empty.proto";
-
-// Represents a user in the system.
-message User {
-  string id = 1;
-  string name = 2;
-  string email = 3;
-}
-
-// Used for operations that need only the user id.
-message UserRequest {
-  string id = 1;
-}
-
-// Used to return multiple users.
-message UserList {
-  repeated User users = 1;
-}
-
-// Generic response for create/delete operations.
-message ResponseMessage {
-  bool success = 1;
+// A single chat payload sent by clients and broadcast by the server.
+message ChatMessage {
+  string user = 1;
   string message = 2;
+  string timestamp = 3;
+  bool isSystem = 4;
 }
 
-service UserService {
-  rpc CreateUser(User) returns (ResponseMessage);
-  rpc GetUser(UserRequest) returns (User);
-  rpc ListUsers(google.protobuf.Empty) returns (UserList);
-  rpc DeleteUser(UserRequest) returns (ResponseMessage);
+service ChatService {
+  // Bidirectional stream:
+  // - client sends messages continuously
+  // - server broadcasts messages to all connected clients
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
 }
