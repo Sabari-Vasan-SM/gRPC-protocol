@@ -1,16 +1,24 @@
-# Realtime Chat Application using gRPC
+# Realtime Multi-Room Chat Platform using gRPC
 
-A beginner-friendly mini project to learn realtime communication with gRPC, Node.js, and Protocol Buffers.
+A larger, modular gRPC project for realtime chat with room management, message history, and operational RPCs.
 
 ## Project Structure
 
 ```text
 project/
+├── lib/
+│   └── grpc.js
 ├── proto/
 │   └── user.proto
 ├── server/
+│   ├── chatService.js
+│   ├── chatState.js
+│   ├── config.js
 │   └── server.js
 ├── client/
+│   ├── clientApi.js
+│   ├── consoleFormatter.js
+│   ├── helpText.js
 │   └── client.js
 ├── package.json
 └── README.md
@@ -18,17 +26,24 @@ project/
 
 ## What This Project Does
 
-The gRPC service (`ChatService`) uses one bidirectional streaming RPC:
+The gRPC service (`ChatService`) now includes:
 
-- `Chat(stream ChatMessage) returns (stream ChatMessage)`
+- `Chat(stream ChatMessage) returns (stream ChatMessage)` for realtime room-scoped streaming
+- `CreateRoom`, `Join`, `SendMessage` unary RPCs for command-like operations
+- `ListRooms`, `GetUsersInRoom` unary RPCs for discovery and presence
+- `GetHistory` server-streaming RPC for recent messages
+- `Health` unary RPC for readiness/health checks
 
 Each connected client can:
 
-- Send messages to the server
-- Receive broadcast messages from all users in realtime
-- Join and leave the chat
+- Join and switch chat rooms
+- Send messages to the active room
+- Receive realtime broadcasts only for room participants
+- List rooms and users in the current room
+- Fetch recent message history for the current room
+- Exit gracefully
 
-Active connections are kept in memory, so everything resets when the server restarts.
+State is in-memory (rooms, users, history), so data resets when the server restarts.
 
 ## Installation
 
@@ -59,18 +74,30 @@ npm run start:client -- Bob
 Each client terminal is interactive:
 
 - Type a message and press Enter to send
-- Type `/exit` to leave chat
+- Type `/help` for commands
+
+### Client Commands
+
+```text
+/help                 Show command help
+/join <room>          Join or create a room
+/rooms                List existing rooms
+/users                Show users in current room
+/history [limit]      Show recent room history (default 10)
+/send <message>       Send message explicitly
+/exit                 Leave chat
+```
 
 ## How gRPC Works Here (Brief)
 
 1. The API contract is defined in `proto/user.proto`.
-2. Server and client both load this `.proto` file using `@grpc/proto-loader`.
-3. The server opens one stream per connected client and stores active streams in memory.
-4. When a client sends a message, the server broadcasts it to every active stream.
-5. gRPC handles serialization (Protocol Buffers), network transport (HTTP/2), and stream delivery.
+2. Shared loading logic in `lib/grpc.js` ensures client/server contract consistency.
+3. The server tracks rooms, users, active streams, and bounded room history in memory.
+4. Realtime messages flow through a bidirectional stream and are broadcast per-room.
+5. Management queries and operations use unary and server-streaming RPC endpoints.
 
 ## Notes for Beginners
 
-- `.proto` is the single source of truth for your service contract.
-- Bidirectional streaming is great for chat, live feeds, and collaborative apps.
-- In production, add authentication, persistence, and message history storage.
+- `.proto` remains the single source of truth for service contracts.
+- Combining streaming + unary RPCs enables richer workflows than chat-only demos.
+- Next production steps: auth, persistence, retry policies, and distributed state.

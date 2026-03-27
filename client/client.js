@@ -1,28 +1,15 @@
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const path = require('path');
 const readline = require('readline');
+const { DEFAULT_ROOM } = require('../server/config');
+const { createClient, unary } = require('./clientApi');
+const { formatMessage } = require('./consoleFormatter');
+const { HELP_TEXT } = require('./helpText');
 
-const PROTO_PATH = path.join(__dirname, '..', 'proto', 'user.proto');
-
-const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
-    keepCase: true,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true,
-});
-
-const chatProto = grpc.loadPackageDefinition(packageDefinition).chat;
-
-const client = new chatProto.ChatService(
-    'localhost:50051',
-    grpc.credentials.createInsecure()
-);
+const client = createClient('localhost:50051');
 
 const userName = process.argv[2] || `User-${Math.floor(Math.random() * 1000)}`;
 const stream = client.Chat();
 let isShuttingDown = false;
+let currentRoom = DEFAULT_ROOM;
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -40,17 +27,106 @@ function shutdown() {
     client.close();
 }
 
-console.log(`Connected as ${userName}`);
-console.log('Type a message and press Enter. Type /exit to leave.');
-
-stream.on('data', (chatMessage) => {
-    const time = chatMessage.timestamp || new Date().toISOString();
-    if (chatMessage.isSystem) {
-        console.log(`[${time}] [SYSTEM] ${chatMessage.message}`);
+async function joinRoom(roomName) {
+    const room = (roomName || '').trim().toLowerCase();
+    if (!room) {
+        console.log('Usage: /join <room>');
         return;
     }
 
-    console.log(`[${time}] ${chatMessage.user}: ${chatMessage.message}`);
+    const response = await unary(client, 'Join', {
+        user: userName,
+        room,
+    });
+
+    if (!response.ok) {
+        console.log(`Join failed: ${response.message}`);
+        return;
+    }
+
+    currentRoom = room;
+    console.log(`[${response.timestamp}] ${response.message}`);
+}
+
+async function send(text) {
+    stream.write({
+        id: '',
+        user: userName,
+        room: currentRoom,
+        message: text,
+        timestamp: new Date().toISOString(),
+        isSystem: false,
+    });
+}
+
+async function showRooms() {
+    const response = await unary(client, 'ListRooms', {});
+    console.log(`Rooms: ${response.rooms.join(', ') || '(none)'}`);
+}
+
+async function showUsers() {
+    const response = await unary(client, 'GetUsersInRoom', {
+        name: currentRoom,
+    });
+    console.log(`Users in ${currentRoom}: ${response.users.join(', ') || '(none)'}`);
+}
+
+async function showHistory(limitArg) {
+    const parsed = Number(limitArg);
+    const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+
+    const historyStream = client.GetHistory({
+        room: currentRoom,
+        limit,
+    });
+
+    console.log(`Recent messages in ${currentRoom}:`);
+    historyStream.on('data', (message) => {
+        console.log(formatMessage(message));
+    });
+
+    await new Promise((resolve, reject) => {
+        historyStream.on('end', resolve);
+        historyStream.on('error', reject);
+    });
+}
+
+async function handleCommand(rawLine) {
+    const [command, ...args] = rawLine.trim().split(' ');
+
+    switch ((command || '').toLowerCase()) {
+        case '/help':
+            console.log(HELP_TEXT);
+            break;
+        case '/join':
+            await joinRoom(args[0]);
+            break;
+        case '/rooms':
+            await showRooms();
+            break;
+        case '/users':
+            await showUsers();
+            break;
+        case '/history':
+            await showHistory(args[0]);
+            break;
+        case '/send':
+            await send(args.join(' ').trim());
+            break;
+        case '/exit':
+            shutdown();
+            break;
+        default:
+            console.log('Unknown command. Type /help for available commands.');
+    }
+}
+
+console.log(`Connected as ${userName}`);
+console.log(`Current room: ${currentRoom}`);
+console.log('Type a message and press Enter. Type /help for commands.');
+
+stream.on('data', (chatMessage) => {
+    console.log(formatMessage(chatMessage));
 });
 
 stream.on('error', (error) => {
@@ -74,17 +150,20 @@ rl.on('line', (line) => {
         return;
     }
 
-    if (text.toLowerCase() === '/exit') {
-        shutdown();
+    if (text.startsWith('/')) {
+        handleCommand(text).catch((error) => {
+            console.error('Command failed:', error.message);
+        });
         return;
     }
 
-    stream.write({
-        user: userName,
-        message: text,
-        timestamp: new Date().toISOString(),
-        isSystem: false,
+    send(text).catch((error) => {
+        console.error('Send failed:', error.message);
     });
+});
+
+joinRoom(currentRoom).catch((error) => {
+    console.error('Initial join failed:', error.message);
 });
 
 process.on('SIGINT', () => {
