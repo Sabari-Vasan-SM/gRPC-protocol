@@ -2,17 +2,65 @@ syntax = "proto3";
 
 package chat;
 
+message Empty {}
+
 // A single chat payload sent by clients and broadcast by the server.
 message ChatMessage {
+  string id = 1;
+  string user = 2;
+  string room = 3;
+  string message = 4;
+  string timestamp = 5;
+  bool isSystem = 6;
+}
+
+message JoinRequest {
   string user = 1;
+  string room = 2;
+}
+
+message SendMessageRequest {
+  string user = 1;
+  string room = 2;
+  string message = 3;
+}
+
+message Room {
+  string name = 1;
+}
+
+message RoomList {
+  repeated string rooms = 1;
+}
+
+message UserList {
+  string room = 1;
+  repeated string users = 2;
+}
+
+message HistoryRequest {
+  string room = 1;
+  uint32 limit = 2;
+}
+
+message Ack {
+  bool ok = 1;
   string message = 2;
   string timestamp = 3;
-  bool isSystem = 4;
 }
 
 service ChatService {
   // Bidirectional stream:
   // - client sends messages continuously
-  // - server broadcasts messages to all connected clients
+  // - server broadcasts messages to clients in the same room
   rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+
+  // Unary operations for richer chat workflows.
+  rpc CreateRoom(Room) returns (Ack);
+  rpc Join(JoinRequest) returns (Ack);
+  rpc SendMessage(SendMessageRequest) returns (Ack);
+  rpc ListRooms(Empty) returns (RoomList);
+  rpc GetUsersInRoom(Room) returns (UserList);
+  rpc GetHistory(HistoryRequest) returns (stream ChatMessage);
+  rpc Health(Empty) returns (Ack);
 }
